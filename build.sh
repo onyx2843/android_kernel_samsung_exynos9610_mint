@@ -86,33 +86,76 @@ merge_config() {
 VERIFY_TOOLCHAIN() {
     sleep 2
     script_echo " "
+    
+    # 1. Deteksi Os
+   local OS_ARCH=$(uname -m)
+    if [ -f "/usr/bin/proot" ] || [ -n "$TERMUX_VERSION" ] || [ -d "/usr/var/lib/proot-distro" ]; then
+        IS_PROOT=true
+    else
+        IS_PROOT=false
+    fi
+
+    script_echo "D: Arch Detected: $OS_ARCH"
+    script_echo "D: Is Proot: $IS_PROOT"
 
     if [ -d "$TOOLCHAIN" ]; then
         script_echo "I: Toolchain found at repository root"
-        cd "$TOOLCHAIN" || exit
-        git pull
-        cd "$TOP" || exit
-
-        if $BUILD_KERNEL_CI; then
-            if [[ $BUILD_PREF_COMPILER_VERSION == proton ]]; then
-                sudo mkdir -p '/root/build/install/aarch64-linux-gnu'
-                sudo cp -r "$TOOLCHAIN/lib" '/root/build/install/aarch64-linux-gnu'
-                sudo chown -R "$(whoami)" '/root'
-            fi
+        if [ -d "$TOOLCHAIN/.git" ]; then
+            cd "$TOOLCHAIN" || exit
+            git pull
+            cd "$TOP" || exit
         fi
     else
         script_echo "I: Toolchain not found at repository root"
-        script_echo "   Downloading recommended toolchain at \"$TOOLCHAIN\"..."
-        git clone 'https://gitlab.com/TenSeventy7/exynos9610_toolchains_fresh.git' "$TOOLCHAIN" --single-branch -b "$BUILD_PREF_COMPILER_VERSION" --depth 1 2>&1 | sed 's/^/     /'
+        if [[ "$OS_ARCH" == "aarch64" || "$IS_PROOT" == true ]]; then
+            script_echo "   >>> Proot/AArch64 detected. Downloading Proton Clang..."
+            
+            URL_RELEASE="https://github.com/Tamvans97/RDP_Ubuntu/releases/download/b4fd512-23717836352/proton-clang-13-native.tar.gz"
+            
+            if ! wget -q --show-progress --continue "$URL_RELEASE" -O clang_temp.tar.gz; then
+                script_echo "E: Download gagal! Cek koneksi atau sisa penyimpanan internal."
+                return 1
+            fi
+
+            if ! file clang_temp.tar.gz | grep -q "gzip compressed data"; then
+                script_echo "E: File korup"
+                script_echo "D: Isi awal file:"
+                head -n 5 clang_temp.tar.gz
+                rm clang_temp.tar.gz
+                return 1
+            fi
+
+            script_echo "   >>> Extracting toolchain..."
+            mkdir -p "$TOOLCHAIN"
+            if tar -xzf clang_temp.tar.gz -C "$TOOLCHAIN" --strip-components=1; then
+                script_echo "   >>> Extraction success!"
+                rm clang_temp.tar.gz
+                chmod -R +x "$TOOLCHAIN/bin"
+            else
+                script_echo "E: Failed Extraction! :("
+                return 1
+            fi
+
+        else
+            script_echo "   >>> PC/Default detected. Cloning from GitLab..."
+            git clone 'https://gitlab.com/TenSeventy7/exynos9610_toolchains_fresh.git' "$TOOLCHAIN" \
+                --single-branch -b "$BUILD_PREF_COMPILER_VERSION" --depth 1 2>&1 | sed 's/^/     /'
+        fi
     fi
 
+    # Setup Environment Path & Compiler
     export PATH="${TOOLCHAIN}/bin:$PATH"
-	export LD_LIBRARY_PATH="${TOOLCHAIN}/lib:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="${TOOLCHAIN}/lib:$LD_LIBRARY_PATH"
 
-    # Proton Clang 13
     export CROSS_COMPILE="aarch64-linux-gnu-"
-	export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
-	export CC="$BUILD_PREF_COMPILER"
+    export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
+    export CC="clang" 
+
+    if clang --version > /dev/null 2>&1; then
+        script_echo "I: Toolchain ready: $(clang --version | head -n 1)"
+    else
+        script_echo "E: Clang terpasang tapi tidak bisa dijalankan (cek dependencies)!"
+    fi
 }
 VERIFY_DEFCONFIG() {
     if [ ! -f "$BUILD_CONFIG_DIR/$BUILD_DEVICE_CONFIG" ]; then
@@ -444,7 +487,7 @@ mkdir -p "$TMP_DIR"
 VERIFY_TOOLCHAIN
 VERIFY_DEFCONFIG
 
-git submodule update --init "$TOP/KernelSU-Next"
+git submodule update --init "$TOP/KernelSU"
 
 if $BUILD_KERNEL_CI; then
 	export KBUILD_BUILD_USER="Clembot"
