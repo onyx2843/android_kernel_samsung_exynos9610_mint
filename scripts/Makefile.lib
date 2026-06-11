@@ -282,6 +282,8 @@ DTC_FLAGS += -@
 # Disable noisy checks by default
 ifeq ($(KBUILD_ENABLE_EXTRA_GCC_CHECKS),)
 DTC_FLAGS += -Wno-unit_address_vs_reg
+DTC_FLAGS += -Wno-avoid_default_addr_size
+DTC_FLAGS += -Wno-reg_format
 endif
 
 # Generate an assembly file to wrap the output of the device tree compiler
@@ -308,7 +310,7 @@ cmd_dtc = mkdir -p $(dir ${dtc-tmp}) ; \
 	$(DTC) -O dtb -o $@ -b 0 -a 4\
 		$(addprefix -i,$(dir $<) $(DTC_INCLUDE)) $(DTC_FLAGS) \
 		-d $(depfile).dtc.tmp $(dtc-tmp) ; \
-        $(DTC) -O dts -I dtb -o $@.reverse.dts $@ ; \
+        $(DTC) -O dts -I dtb $(DTC_FLAGS) -o $@.reverse.dts $@ ; \
 	cat $(depfile).pre.tmp $(depfile).dtc.tmp > $(depfile)
 
 $(obj)/%.dtb: $(src)/%.dts FORCE

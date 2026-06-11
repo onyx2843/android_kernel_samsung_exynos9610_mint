@@ -30,6 +30,7 @@
 #
 # shellcheck disable=SC1090
 #
+set -o pipefail
 
 # [
 # Directories
@@ -50,6 +51,7 @@ export ARCH="arm64"
 export SUBARCH="arm64"
 export ANDROID_MAJOR_VERSION="r"
 export PLATFORM_VERSION="11.0.0"
+export KCFLAGS="-Wno-unused-but-set-variable"
 
 VERSION=$(grep -m 1    VERSION "$TOP/Makefile"    | sed 's/^.*= //g')
 PATCHLEVEL=$(grep -m 1 PATCHLEVEL "$TOP/Makefile" | sed 's/^.*= //g')
@@ -58,17 +60,18 @@ SUBLEVEL=$(grep -m 1   SUBLEVEL "$TOP/Makefile"   | sed 's/^.*= //g')
 BUILD_DATE="$(date +%s)"
 BUILD_KERNEL_BRANCH="${GITHUB_REF##*/}"
 [[ -z $BUILD_KERNEL_BRANCH ]] && BUILD_KERNEL_BRANCH="user"
-[[ $BUILD_KERNEL_BRANCH == *"android-"* ]] && BUILD_KERNEL_BRANCH="mainline"
+# [[ $BUILD_KERNEL_BRANCH == *"android-"* ]] && BUILD_KERNEL_BRANCH="mainline"
 
 # Defaults
 BUILD_KERNEL_KSU=false
 BUILD_KERNEL_CI=false
 BUILD_KERNEL_DIRTY=false
 BUILD_KERNEL_PERMISSIVE=false
+BUILD_USE_CCACHE=false
 
 # Script commands
 script_echo() { echo "  $1"; }
-exit_script() { kill -INT $$; }
+exit_script() { exit 1; }
 
 merge_config() {
 	if [[ ! -f "$SUB_CONFIG_DIR/mint_$1.config" ]]; then
@@ -87,23 +90,53 @@ VERIFY_TOOLCHAIN() {
     sleep 2
     script_echo " "
 
-    if [ -d "$TOOLCHAIN" ]; then
-        script_echo "I: Toolchain found at repository root"
-        cd "$TOOLCHAIN" || exit
-        git pull
-        cd "$TOP" || exit
+    local do_install=false
 
-        if $BUILD_KERNEL_CI; then
-            if [[ $BUILD_PREF_COMPILER_VERSION == proton ]]; then
-                sudo mkdir -p '/root/build/install/aarch64-linux-gnu'
-                sudo cp -r "$TOOLCHAIN/lib" '/root/build/install/aarch64-linux-gnu'
-                sudo chown -R "$(whoami)" '/root'
-            fi
-        fi
-    else
+    if [ ! -d "$TOOLCHAIN" ]; then
         script_echo "I: Toolchain not found at repository root"
+        do_install=true
+    elif $BUILD_KERNEL_CI; then
+        script_echo "I: Toolchain found at repository root (CI build, keeping as-is)"
+    else
+        script_echo "I: Toolchain found at repository root"
+        script_echo "   Re-download it fresh? Existing files will be removed first. [y/N]"
+        read -r REPLY
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            do_install=true
+        else
+            script_echo "I: Keeping existing toolchain."
+        fi
+    fi
+
+    if $do_install; then
         script_echo "   Downloading recommended toolchain at \"$TOOLCHAIN\"..."
-        git clone 'https://gitlab.com/TenSeventy7/exynos9610_toolchains_fresh.git' "$TOOLCHAIN" --single-branch -b "$BUILD_PREF_COMPILER_VERSION" --depth 1 2>&1 | sed 's/^/     /'
+
+        local TOOLCHAIN_URL="https://media.githubusercontent.com/media/Zonkerus/Clang_13.0.1/master/toolchain_thin.tar.xz"
+        local TOOLCHAIN_ARCHIVE="$TOP/toolchain_thin.tar.xz"
+
+        rm -rf "$TOOLCHAIN"
+
+        curl -L --fail -o "$TOOLCHAIN_ARCHIVE" "$TOOLCHAIN_URL" 2>&1 | sed 's/^/     /'
+
+        if [[ ! -s "$TOOLCHAIN_ARCHIVE" || $(wc -c < "$TOOLCHAIN_ARCHIVE") -lt 1000000 ]]; then
+            script_echo "E: Toolchain download failed or is too small!"
+            script_echo "   If the repo uses Git LFS, make sure the media.* URL still resolves it."
+            rm -f "$TOOLCHAIN_ARCHIVE"
+            exit_script
+        fi
+
+        script_echo "   Extracting toolchain..."
+        mkdir -p "$TOOLCHAIN"
+        tar -xf "$TOOLCHAIN_ARCHIVE" -C "$TOOLCHAIN"
+        rm -f "$TOOLCHAIN_ARCHIVE"
+    fi
+
+    if $BUILD_KERNEL_CI; then
+        if [[ $BUILD_PREF_COMPILER_VERSION == proton ]]; then
+            sudo mkdir -p '/root/build/install/aarch64-linux-gnu'
+            sudo cp -r "$TOOLCHAIN/lib" '/root/build/install/aarch64-linux-gnu'
+            sudo chown -R "$(whoami)" '/root'
+        fi
     fi
 
     export PATH="${TOOLCHAIN}/bin:$PATH"
@@ -178,20 +211,31 @@ BUILD_KERNEL() {
     sleep 3
     script_echo " "
 
-    case "$BUILD_PREF_COMPILER_VERSION" in
-    proton)
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" HOSTCC=clang HOSTCXX=clang++ AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip "$BUILD_DEVICE_TMP_CONFIG" LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" HOSTCC=clang HOSTCXX=clang++ AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip -j$JOBS LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        ;;
-    clang)
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" LLVM=1 "$BUILD_DEVICE_TMP_CONFIG" LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" LLVM=1 -j$JOBS LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        ;;
-    *)
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" "$BUILD_DEVICE_TMP_CONFIG" LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        make -C "$TOP" CC="$BUILD_PREF_COMPILER" -j$JOBS LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-        ;;
-    esac
+    if [[ "$BUILD_USE_CCACHE" == "true" ]] && command -v ccache &> /dev/null; then
+        script_echo "I: ccache detected! Setting up compiler masquerade..."
+        export CCACHE_DIR="$TOP/.ccache"
+        export CCACHE_COMPILERCHECK=content
+        ccache -z >/dev/null
+
+        CCACHE_BIN_DIR="$TOP/out/ccache-bin"
+        rm -rf "$CCACHE_BIN_DIR"
+        mkdir -p "$CCACHE_BIN_DIR"
+
+        for cmd in clang clang++ gcc g++ cc c++; do
+            ln -sf "$(command -v ccache)" "$CCACHE_BIN_DIR/$cmd"
+        done
+
+        export PATH="$CCACHE_BIN_DIR:$PATH"
+    fi
+
+    # Proton Clang 13
+    make -C "$TOP" CC="$BUILD_PREF_COMPILER" HOSTCC=clang HOSTCXX=clang++ AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip "$BUILD_DEVICE_TMP_CONFIG" LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
+    make -C "$TOP" CC="$BUILD_PREF_COMPILER" HOSTCC=clang HOSTCXX=clang++ AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip -j$JOBS LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
+
+    if [[ "$BUILD_USE_CCACHE" == "true" ]] && command -v ccache &> /dev/null; then
+        script_echo "I: ccache statistics:"
+        ccache -s | sed 's/^/     /'
+    fi
 
     if [ ! -f "$TOP/arch/arm64/boot/Image" ]; then
         script_echo "E: Image not built successfully!"
@@ -201,24 +245,12 @@ BUILD_KERNEL() {
     fi
 }
 BUILD_RAMDISK() {
-    local comptype compcmd
-    comptype="cpio"
+    local compcmd
     RAMDISK="ramdisk-new.cpio"
-
-    case "$comptype" in
-    gzip)  compcmd="gzip";                          RAMDISK="$RAMDISK.gz" ;;
-    lzop)  compcmd="lzop";                          RAMDISK="$RAMDISK.lzo" ;;
-    xz)    compcmd="xz -1 -Ccrc32";                 RAMDISK="$RAMDISK.xz" ;;
-    lzma)  compcmd="xz -9 -Flzma";                  RAMDISK="$RAMDISK.lzma" ;;
-    bzip2) compcmd="bzip2";                         RAMDISK="$RAMDISK.bz2" ;;
-    lz4)   compcmd="$TOP/tools/make/bin/lz4 -9";    RAMDISK="$RAMDISK.lz4" ;;
-    lz4-l) compcmd="$TOP/tools/make/bin/lz4 -9 -l"; RAMDISK="$RAMDISK.lz4" ;;
-    cpio)  compcmd="cat";                           RAMDISK="$RAMDISK" ;;
-    esac
+    compcmd="cat"
 
     script_echo " "
     script_echo "I: Building ramdisk..."
-    script_echo "Compression type: $comptype"
 
     cd "$TOP/tools/make/ramdisk" || exit
     find . | cpio -R 0:0 -H newc --quiet -o | $compcmd > "$TOP/tools/make/$RAMDISK"
@@ -279,7 +311,6 @@ BUILD_PACKAGE() {
     if [[ $BUILD_VARIANT == aosp ]]; then
         script_echo "I: Remove product from fstab for use with AOSP ROMs."
         sed -i '/product/d' "$TOP/tools/make/ramdisk/fstab.exynos9610"
-        sed -i '/product/d' "$TOP/tools/make/ramdisk/fstab.exynos9610"
     fi
 
     # Generate manifest
@@ -324,7 +355,9 @@ show_usage() {
 	script_echo "-k, --kernelsu            Pre-root the kernel with KernelSU."
 	script_echo "                          Not available for 'recovery' variant."
 	script_echo "-n, --no-clean            Do not clean up before build."
+	script_echo "-e, --enforcing           Build kernel with SELinux enforcing (default, no-op)."
 	script_echo "-p, --permissive          Build kernel with SELinux fully permissive. NOT RECOMMENDED!"
+	script_echo "-cc, --ccache             Enable compiler cache (ccache) for the build."
 	script_echo " "
 	script_echo "-h, --help                Show this message."
 	script_echo " "
@@ -380,8 +413,13 @@ while [ $# -gt 0 ]; do
     -n|--no-clean)
         BUILD_KERNEL_DIRTY=true
         shift ;;
+    -e|--enforcing)
+        shift ;;
     -p|--permissive)
         BUILD_KERNEL_PERMISSIVE=true
+        shift ;;
+    -cc|--ccache)
+        BUILD_USE_CCACHE=true
         shift ;;
     -h|--help)
         show_usage ;;
@@ -424,7 +462,6 @@ BUILD_DEVICE_CONFIG="exynos9610-${BUILD_DEVICE_NAME}_core_defconfig"
 BUILD_DEVICE_TMP_CONFIG="tmp_exynos9610-${BUILD_DEVICE_NAME}_${BUILD_VARIANT}_defconfig"
 export KCONFIG_BUILTINCONFIG="$BUILD_CONFIG_DIR/exynos9610-${BUILD_DEVICE_NAME}_default_defconfig"
 
-SET_ANDROIDVERSION
 SET_LOCALVERSION
 
 if [[ $BUILD_VARIANT == recovery ]]; then
@@ -443,12 +480,25 @@ script_echo "   KernelSU-enabled:   $BUILD_KERNEL_KSU"
 script_echo "   Output file:        $OUT_DIR/$FILE_NAME"
 
 # Setup build environment
+if $BUILD_KERNEL_DIRTY; then
+	script_echo " "
+	script_echo "I: Dirty build!"
+else
+	script_echo " "
+	script_echo "I: Clean build!"
+
+	git -C "$TOP" reset --hard
+	git -C "$TOP" clean -fdx -e toolchain -e .ccache
+fi
+
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 
 VERIFY_TOOLCHAIN
 VERIFY_DEFCONFIG
+SET_ANDROIDVERSION
 
+git submodule foreach '[ "$path" = "KernelSU" ] && git reset --hard && git clean -fdx'
 git submodule update --init "$TOP/KernelSU"
 
 if $BUILD_KERNEL_CI; then
@@ -457,16 +507,6 @@ if $BUILD_KERNEL_CI; then
 
 	script_echo " "
 	script_echo "I: Beep boop! CI build!"
-fi
-
-if $BUILD_KERNEL_DIRTY; then
-	script_echo " "
-	script_echo "I: Dirty build!"
-else
-	script_echo " "
-	script_echo "I: Clean build!"
-	make CC="$BUILD_PREF_COMPILER" clean 2>&1 | sed 's/^/     /'
-	make CC="$BUILD_PREF_COMPILER" mrproper 2>&1 | sed 's/^/     /'
 fi
 
 # Merge subconfigs
