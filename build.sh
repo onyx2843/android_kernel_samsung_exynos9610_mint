@@ -501,6 +501,8 @@ SET_ANDROIDVERSION
 git submodule foreach '[ "$path" = "KernelSU" ] && git reset --hard && git clean -fdx'
 git submodule update --init "$TOP/KernelSU"
 
+sed -i 's/&current->cpus_allowed/current->cpus_ptr/g' "$TOP/KernelSU/kernel/selinux/rules.c"
+
 if $BUILD_KERNEL_CI; then
 	export KBUILD_BUILD_USER="Clembot"
 	export KBUILD_BUILD_HOST="Lumiose-CI"

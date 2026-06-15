@@ -833,6 +833,18 @@ void input_booster_init(void)
  * to 'seed' initial state of a switch or initial position of absolute
  * axis, etc.
  */
+
+#ifdef CONFIG_KSU_KPROBES_HOOK
+#error KernelSU: manual hooks are incompatible with CONFIG_KSU_KPROBES_HOOK. Disable it in your defconfig/KSU config.
+#endif
+
+#ifdef CONFIG_KSU
+extern bool ksu_input_hook __read_mostly;
+
+__attribute__((cold))
+extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
+#endif
+
 void input_event(struct input_dev *dev,
 		 unsigned int type, unsigned int code, int value)
 {
@@ -842,6 +854,11 @@ void input_event(struct input_dev *dev,
 	int idx = 0;
 
 	if (is_event_supported(type, dev->evbit, EV_MAX)) {
+
+	#ifdef CONFIG_KSU
+	if (unlikely(ksu_input_hook))
+		ksu_handle_input_handle_event(&type, &code, &value);
+	#endif
 
 		spin_lock_irqsave(&dev->event_lock, flags);
 		input_handle_event(dev, type, code, value);
