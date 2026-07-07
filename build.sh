@@ -460,8 +460,8 @@ if $BUILD_KERNEL_DIRTY; then
 else
 	script_echo " "
 	script_echo "I: Clean build!"
-	make CC="$BUILD_PREF_COMPILER" clean 2>&1 | sed 's/^/     /'
-	make CC="$BUILD_PREF_COMPILER" mrproper 2>&1 | sed 's/^/     /'
+	make CC="$BUILD_PREF_COMPILER" KBUILD_SRC= srctree=$(pwd) HAVE_KSU_HOOK=0 clean 2>&1 | sed 's/^/     /'
+	make CC="$BUILD_PREF_COMPILER" KBUILD_SRC= srctree=$(pwd) HAVE_KSU_HOOK=0 mrproper 2>&1 | sed 's/^/     /'
 fi
 
 # Merge subconfigs
