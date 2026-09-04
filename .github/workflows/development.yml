@@ -30,9 +30,9 @@ jobs:
 
       - uses: szenius/set-timezone@v1.0
         with:
-          timezoneLinux: "Asia/Manila"
-          timezoneMacos: "Asia/Manila"
-          timezoneWindows: "Philippine Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Export build branch
         run: echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
@@ -114,9 +114,9 @@ jobs:
 
       - uses: szenius/set-timezone@v1.0
         with:
-          timezoneLinux: "Asia/Manila"
-          timezoneMacos: "Asia/Manila"
-          timezoneWindows: "Philippine Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Merge releases
         run: |
@@ -135,12 +135,3 @@ jobs:
         with:
           keep_latest: 12
           delete_tag_pattern: "xbeta"
-
-      - name: Upload release
-        uses: Hs1r1us/Release-AIO@v1.0
-        with:
-          tag_name: xbeta-${{ github.run_number }}_a50dx
-          prerelease: true
-          release_name: Galaxy A50 (beta-${{ github.run_number }})
-          body_path: "./tools/make/release/a50-development.md"
-          asset_files: "./release"
