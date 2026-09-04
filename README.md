@@ -29,7 +29,7 @@ Mint Kernel will **never** be possible without the unwavering work of these awes
  - [StormBreaker Kernel](https://github.com/stormbreaker-project/kernel_xiaomi_surya) (@stormbreaker-project) and [Stratosphere Kernel](https://github.com/Stratosphere-Kernel/android_kernel_xiaomi_surya) (@Stratosphere-Kernel) for the POCO X3
  - [Artemis Kernel for the Pixel 4 XL](https://github.com/celtare21/kernel_google_coral) (@celtare21)
  - [GS101/Tensor SoC Kernel Source](https://github.com/AndreiLux/GS101) (@Google/@AndreiLux)
- - [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) - KernelSU fork with SUSFS integration
+ - [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) - KernelSU fork with SUSFS integration
  - [SUSFS](https://gitlab.com/simonpunk/susfs4ksu) - Kernel-level root hiding (v2.2.0)
  - [DroidSpaces](https://github.com/ravindu644/DroidSpaces) - Android namespace isolation
 
@@ -41,7 +41,6 @@ This is a fork of [Mint Kernel](https://github.com/TenSeventy7/android_kernel_sa
 
 [DM on Telegram](https://t.me/bitcockiii) — 爪卂丂ㄒ乇尺爪工刀ᗪ
 
-- Replaced KernelSU-Next with **ReSukiSU v4.1.0**
 - Integrated **SUSFS v2.2.0** (kernel-level root hiding with mount, kstat, cmdline, and uname spoofing)
 - Added **DroidSpaces** support (IPC namespaces, veth, bridge)
 - Enabled **BBR TCP congestion control**
