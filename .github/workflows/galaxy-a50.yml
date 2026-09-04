@@ -27,9 +27,9 @@ jobs:
 
       - uses: szenius/set-timezone@v1.0
         with:
-          timezoneLinux: "Asia/Manila"
-          timezoneMacos: "Asia/Manila"
-          timezoneWindows: "Philippine Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Export build branch
         run: echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
@@ -111,9 +111,9 @@ jobs:
 
       - uses: szenius/set-timezone@v1.0
         with:
-          timezoneLinux: "Asia/Manila"
-          timezoneMacos: "Asia/Manila"
-          timezoneWindows: "Philippine Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Merge releases
         run: |
@@ -126,12 +126,3 @@ jobs:
           set -eo pipefail
           rm -f ./release/kernel_config_*.txt
           rm -rf ./release/aosp-* ./release/oneui-*
-
-      - name: Upload release
-        uses: Hs1r1us/Release-AIO@v1.0
-        with:
-          tag_name: mainline-${{ github.run_number }}_a50dx
-          prerelease: true
-          release_name: Mint Stable
-          body_path: "./tools/make/release/a50-release.md"
-          asset_files: "./release"
