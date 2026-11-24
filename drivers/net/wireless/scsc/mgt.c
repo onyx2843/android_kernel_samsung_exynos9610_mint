@@ -782,7 +782,8 @@ int slsi_start(struct slsi_dev *sdev, struct net_device *dev)
 			offset = snprintf(buf + offset, sizeof(buf), "#softap.info\n");
 			offset += snprintf(buf + offset, sizeof(buf), "DualBandConcurrency=%s\n", sdev->dualband_concurrency ? "yes" : "no");
 			offset += snprintf(buf + offset, sizeof(buf), "DualInterface=%s\n", "yes");
-			offset += snprintf(buf + offset, sizeof(buf), "5G=%s\n", sdev->band_5g_supported ? "yes" : "no");
+			/* Ultimate Kernel: 5GHz SoftAP does not work with the A17 framework on A50, advertise 2.4GHz only */
+			offset += snprintf(buf + offset, sizeof(buf), "5G=no\n");
 			offset += snprintf(buf + offset, sizeof(buf), "maxClient=%d\n", !sdev->softap_max_client ? SLSI_MIB_MAX_CLIENT : sdev->softap_max_client);
 
 			/* following are always supported */
