@@ -389,10 +389,86 @@ out:
 	return ret;
 }
 
-static int trie_delete_elem(struct bpf_map *map, void *key)
+/* Ultimate Kernel: backport of upstream v4.15 LPM trie delete (e454cf595853).
+ * Android 17 BpfNetMaps clears its local_net_access LPM map at start;
+ * without delete, every system_server restart crashes and the phone reboots.
+ */
+static int trie_delete_elem(struct bpf_map *map, void *_key)
 {
-	/* TODO */
-	return -ENOSYS;
+	struct lpm_trie *trie = container_of(map, struct lpm_trie, map);
+	struct bpf_lpm_trie_key *key = _key;
+	struct lpm_trie_node __rcu **trim, **trim2;
+	struct lpm_trie_node *node, *parent;
+	unsigned long irq_flags;
+	unsigned int next_bit;
+	size_t matchlen = 0;
+	int ret = 0;
+
+	if (key->prefixlen > trie->max_prefixlen)
+		return -EINVAL;
+
+	raw_spin_lock_irqsave(&trie->lock, irq_flags);
+
+	trim = &trie->root;
+	trim2 = trim;
+	parent = NULL;
+	while ((node = rcu_dereference_protected(
+		       *trim, lockdep_is_held(&trie->lock)))) {
+		matchlen = longest_prefix_match(trie, node, key);
+
+		if (node->prefixlen != matchlen ||
+		    node->prefixlen == key->prefixlen)
+			break;
+
+		parent = node;
+		trim2 = trim;
+		next_bit = extract_bit(key->data, node->prefixlen);
+		trim = &node->child[next_bit];
+	}
+
+	if (!node || node->prefixlen != key->prefixlen ||
+	    node->prefixlen != matchlen ||
+	    (node->flags & LPM_TREE_NODE_FLAG_IM)) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	trie->n_entries--;
+
+	/* Two children: just mark it intermediate */
+	if (rcu_access_pointer(node->child[0]) &&
+	    rcu_access_pointer(node->child[1])) {
+		node->flags |= LPM_TREE_NODE_FLAG_IM;
+		goto out;
+	}
+
+	/* Leaf under an intermediate parent: drop both, promote sibling */
+	if (parent && (parent->flags & LPM_TREE_NODE_FLAG_IM) &&
+	    !node->child[0] && !node->child[1]) {
+		if (node == rcu_access_pointer(parent->child[0]))
+			rcu_assign_pointer(
+				*trim2, rcu_access_pointer(parent->child[1]));
+		else
+			rcu_assign_pointer(
+				*trim2, rcu_access_pointer(parent->child[0]));
+		kfree_rcu(parent, rcu);
+		kfree_rcu(node, rcu);
+		goto out;
+	}
+
+	/* Zero or one child: move the child into the slot */
+	if (node->child[0])
+		rcu_assign_pointer(*trim, rcu_access_pointer(node->child[0]));
+	else if (node->child[1])
+		rcu_assign_pointer(*trim, rcu_access_pointer(node->child[1]));
+	else
+		RCU_INIT_POINTER(*trim, NULL);
+	kfree_rcu(node, rcu);
+
+out:
+	raw_spin_unlock_irqrestore(&trie->lock, irq_flags);
+
+	return ret;
 }
 
 #define LPM_DATA_SIZE_MAX	256
