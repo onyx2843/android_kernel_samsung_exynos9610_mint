@@ -1,4 +1,4 @@
-name: Development Build (Galaxy A50)
+name: Kernel Build (Galaxy A50)
 
 on:
   workflow_dispatch:
@@ -23,21 +23,21 @@ jobs:
         type:
           - oneui-11-e
           - oneui-12-e
-          # - oneui-11-p
-          # - oneui-12-p
-          # - aosp-11-e
-          # - aosp-12-e
-          # - aosp-11-p
-          # - aosp-12-p
+          - oneui-11-p
+          - oneui-12-p
+          - aosp-11-e
+          - aosp-12-e
+          - aosp-11-p
+          - aosp-12-p
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: szenius/set-timezone@v2.0
         with:
-          timezoneLinux: "Europe/Minsk"
-          timezoneMacos: "Europe/Minsk"
-          timezoneWindows: "Belarus Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Install dependencies
         run: |
@@ -78,7 +78,7 @@ jobs:
           restore-keys: |
             ccache-${{ matrix.type }}-
 
-      - name: Build Mint kernel (KernelSU)
+      - name: Build Mint kernel (KernelSU-Next)
         run: |
           set -eo pipefail
           echo "  I: Building Mint kernel ${GITHUB_REF##*/}-${GITHUB_RUN_NUMBER}"
@@ -94,7 +94,7 @@ jobs:
       - name: Upload kernel image artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.type }} Kernel Image (KernelSU)
+          name: ${{ matrix.type }} Kernel Image (KernelSU-Next)
           path: "out/boot.img"
           if-no-files-found: error
 
@@ -139,9 +139,9 @@ jobs:
 
       - uses: szenius/set-timezone@v2.0
         with:
-          timezoneLinux: "Europe/Minsk"
-          timezoneMacos: "Europe/Minsk"
-          timezoneWindows: "Belarus Standard Time"
+          timezoneLinux: "Asia/Ho_Chi_Minh"
+          timezoneMacos: "Asia/Ho_Chi_Minh"
+          timezoneWindows: "Indochina Time"
 
       - name: Merge releases
         run: |
