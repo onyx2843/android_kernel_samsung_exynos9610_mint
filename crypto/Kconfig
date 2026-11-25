@@ -1677,6 +1677,22 @@ config CRYPTO_842
 	help
 	  This is the 842 algorithm.
 
+config CRYPTO_LZ4K
+	tristate "LZ4K compression algorithm"
+	select CRYPTO_ALGAPI
+	select LZ4K_COMPRESS
+	select LZ4K_DECOMPRESS
+	help
+	  LZ4K compression algorithm (Huawei)
+
+config CRYPTO_LZ4KD
+	tristate "LZ4KD compression algorithm"
+	select CRYPTO_ALGAPI
+	select LZ4KD_COMPRESS
+	select LZ4KD_DECOMPRESS
+	help
+	  LZ4KD compression algorithm (Huawei)
+
 config CRYPTO_LZ4
 	tristate "LZ4 compression algorithm"
 	select CRYPTO_ALGAPI
